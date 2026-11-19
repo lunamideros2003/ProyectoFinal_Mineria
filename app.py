@@ -14,7 +14,7 @@ from src.config import SAMPLES_DIR
 from src.lote import (EJEMPLOS, MAX_BYTES, MAX_FILAS, ErrorDatos, leer_csv, leer_ejemplo,
                       leer_texto_pegado, listar_ejemplos, preparar)
 from src.predict import cargar_artefactos, predecir_texto
-from src.train import modelos_listos
+from src.train import metricas_por_clase, modelos_listos
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_BYTES + 1024 * 1024
@@ -35,6 +35,8 @@ def obtener_artefactos():
         return None, None, None
     if _cache["vectorizer"] is None:
         _cache["vectorizer"], _cache["modelos"], _cache["metricas"] = cargar_artefactos()
+        for m in (_cache["metricas"] or {}).get("modelos", {}).values():  # metrics.json anteriores
+            m.setdefault("por_clase", metricas_por_clase(m["matriz_confusion"]))
     return _cache["vectorizer"], _cache["modelos"], _cache["metricas"]
 
 

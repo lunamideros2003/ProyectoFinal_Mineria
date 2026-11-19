@@ -68,14 +68,34 @@ def construir_modelos() -> dict:
     }
 
 
+def metricas_por_clase(cm) -> dict:
+    """Precisión, recall y F1 de cada clase a partir de la matriz [[VN, FP], [FN, VP]].
+
+    Con el test balanceado, los promedios ponderados casi coinciden con la
+    accuracy (el recall ponderado es igual a la accuracy por definición), así
+    que lo informativo es ver cada clase por separado.
+    """
+    (vn, fp), (fn, vp) = cm
+
+    def clase(aciertos, falsos_alarma, perdidos):
+        p = aciertos / (aciertos + falsos_alarma) if aciertos + falsos_alarma else 0.0
+        r = aciertos / (aciertos + perdidos) if aciertos + perdidos else 0.0
+        f1 = 2 * p * r / (p + r) if p + r else 0.0
+        return {"precision": round(p, 4), "recall": round(r, 4), "f1": round(f1, 4)}
+
+    pos, neg = clase(vp, fp, fn), clase(vn, fn, fp)
+    return {"positivo": pos, "negativo": neg, "f1_macro": round((pos["f1"] + neg["f1"]) / 2, 4)}
+
+
 def metricas_modelo(y_true, y_pred) -> dict:
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     return {
         "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
-        "f1": round(float(f1_score(y_true, y_pred, average="weighted")), 4),
-        "precision": round(float(precision_score(y_true, y_pred, average="weighted")), 4),
-        "recall": round(float(recall_score(y_true, y_pred, average="weighted")), 4),
+        "f1": round(float(f1_score(y_true, y_pred, average="weighted", zero_division=0)), 4),
+        "precision": round(float(precision_score(y_true, y_pred, average="weighted", zero_division=0)), 4),
+        "recall": round(float(recall_score(y_true, y_pred, average="weighted", zero_division=0)), 4),
         "matriz_confusion": cm.tolist(),
+        "por_clase": metricas_por_clase(cm.tolist()),
     }
 
 

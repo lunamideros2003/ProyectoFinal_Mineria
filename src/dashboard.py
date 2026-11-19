@@ -7,23 +7,17 @@ el panel: KPIs, distribución, rendimiento por modelo, acuerdo, confianza y tér
 import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 
 from src.config import COLUMNS, RAW_DIR, SAMPLE_PATH
 from src.preprocessing import STOP_WORDS, limpiar_texto
+from src.train import metricas_modelo
 
 ORDEN_MODELOS = ["Naive Bayes", "SVM", "Random Forest"]
 CONSENSO = "Consenso"
 
 
 def _metricas(y, pred) -> dict:
-    return {
-        "accuracy": round(float(accuracy_score(y, pred)), 4),
-        "f1": round(float(f1_score(y, pred, average="weighted")), 4),
-        "precision": round(float(precision_score(y, pred, average="weighted", zero_division=0)), 4),
-        "recall": round(float(recall_score(y, pred, average="weighted", zero_division=0)), 4),
-        "matriz_confusion": confusion_matrix(y, pred, labels=[0, 1]).tolist(),
-    }
+    return metricas_modelo(y, pred)
 
 
 def _terminos(limpios: pd.Series, pred: np.ndarray, top: int = 12) -> dict:

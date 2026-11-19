@@ -121,12 +121,12 @@
   <div class="kpi">
     <small>Accuracy por votación</small>
     <b>{{ cons.accuracy|pct }}</b>
-    <span>F1 {{ '%.3f'|format(cons.f1) }} · {% if r.n_etiquetados < r.n %}sobre {{ r.n_etiquetados|miles }} textos con sentimiento{% else %}los tres modelos combinados{% endif %}</span>
+    <span>Detecta {{ cons.por_clase.positivo.recall|pct }} de positivos y {{ cons.por_clase.negativo.recall|pct }} de negativos · {% if r.n_etiquetados < r.n %}sobre {{ r.n_etiquetados|miles }} textos con sentimiento{% else %}los tres modelos combinados{% endif %}</span>
   </div>
   <div class="kpi">
     <small>Mejor modelo individual</small>
     <b class="txt">{{ r.mejor_modelo }}</b>
-    <span>Accuracy {{ mejor.accuracy|pct }} · F1 {{ '%.3f'|format(mejor.f1) }}</span>
+    <span>Accuracy {{ mejor.accuracy|pct }} · detecta {{ mejor.por_clase.positivo.recall|pct }} de positivos y {{ mejor.por_clase.negativo.recall|pct }} de negativos</span>
   </div>
   {% endif %}
   <div class="kpi">
@@ -146,7 +146,7 @@
   {% if con_etiquetas %}
   <section class="panel">
     <h3>Rendimiento por modelo</h3>
-    <p class="hint">Valores entre 0 y 1. El eje comienza en 0.50, el resultado que se obtendría al azar.</p>
+    <p class="hint">Accuracy y, para cada clase, precisión (cuántos aciertos hay entre los que marca) y recall (cuántos encuentra). El eje comienza en 0.50, lo que se obtendría al azar.</p>
     <div id="ch-rend" class="chart"></div>
   </section>
   {% endif %}
@@ -182,18 +182,22 @@
         <div class="cm" style="margin-top:14px">
           <span></span><span>Estimado negativo</span><span>Estimado positivo</span>
           <span>Negativo</span>
-          <b class="ok" style="--a:{{ '%.2f'|format(tn / (tn + fp) * 0.8) }}">{{ tn|miles }}</b>
-          <b class="ko" style="--a:{{ '%.2f'|format(fp / (tn + fp) * 0.8) }}">{{ fp|miles }}</b>
+          <b class="ok" style="--a:{{ '%.2f'|format(tn / ((tn + fp) or 1) * 0.8) }}">{{ tn|miles }}</b>
+          <b class="ko" style="--a:{{ '%.2f'|format(fp / ((tn + fp) or 1) * 0.8) }}">{{ fp|miles }}</b>
           <span>Positivo</span>
-          <b class="ko" style="--a:{{ '%.2f'|format(fn / (fn + tp) * 0.8) }}">{{ fn|miles }}</b>
-          <b class="ok" style="--a:{{ '%.2f'|format(tp / (fn + tp) * 0.8) }}">{{ tp|miles }}</b>
+          <b class="ko" style="--a:{{ '%.2f'|format(fn / ((fn + tp) or 1) * 0.8) }}">{{ fn|miles }}</b>
+          <b class="ok" style="--a:{{ '%.2f'|format(tp / ((fn + tp) or 1) * 0.8) }}">{{ tp|miles }}</b>
         </div>
-        <div class="stats" style="margin-top:16px">
-          <div class="stat"><small>Accuracy</small><b>{{ '%.3f'|format(r.metricas[nombre].accuracy) }}</b></div>
-          <div class="stat"><small>Precisión</small><b>{{ '%.3f'|format(r.metricas[nombre].precision) }}</b></div>
-          <div class="stat"><small>Recall</small><b>{{ '%.3f'|format(r.metricas[nombre].recall) }}</b></div>
-          <div class="stat"><small>F1</small><b>{{ '%.3f'|format(r.metricas[nombre].f1) }}</b></div>
-        </div>
+        {% set pc = r.metricas[nombre].por_clase %}
+        <p class="hint" style="margin:16px 0 4px">Accuracy <b class="num">{{ '%.3f'|format(r.metricas[nombre].accuracy) }}</b></p>
+        <table class="data compacta">
+          <thead><tr><th>Clase</th><th class="r">Precisión</th><th class="r">Recall</th><th class="r">F1</th></tr></thead>
+          <tbody>
+            {% for c, txt in [('positivo', 'Positivo'), ('negativo', 'Negativo')] %}
+            <tr><td>{{ txt }}</td><td class="r">{{ '%.3f'|format(pc[c].precision) }}</td><td class="r">{{ '%.3f'|format(pc[c].recall) }}</td><td class="r">{{ '%.3f'|format(pc[c].f1) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     {% endfor %}
   </section>
@@ -304,18 +308,22 @@
 
   // Rendimiento por modelo
   if (R.metricas) {
-    const metricas = [["accuracy", "Accuracy"], ["f1", "F1"], ["precision", "Precisión"], ["recall", "Recall"]];
+    const metricas = [
+      [m => m.accuracy, "Accuracy"],
+      [m => m.por_clase.positivo.precision, "Precisión\npositivos"], [m => m.por_clase.positivo.recall, "Recall\npositivos"],
+      [m => m.por_clase.negativo.precision, "Precisión\nnegativos"], [m => m.por_clase.negativo.recall, "Recall\nnegativos"],
+    ];
     const colores = { "Naive Bayes": T.c.info, "SVM": T.c.pos, "Random Forest": T.c.ink3, "Consenso": T.c.ink };
     T.render("ch-rend", {
       tooltip: { trigger: "axis", valueFormatter: v => v.toFixed(3) },
       legend: { top: 0, data: R.modelos.map(etiqueta) },
-      grid: { left: 44, right: 16, top: 44, bottom: 28 },
-      xAxis: { type: "category", data: metricas.map(m => m[1]) },
-      yAxis: { type: "value", min: 0.5, interval: 0.05, axisLabel: { formatter: v => v.toFixed(2) },
-               max: Math.ceil(Math.max(...R.modelos.flatMap(n => metricas.map(m => R.metricas[n][m[0]]))) * 20 + 0.001) / 20 },
+      grid: { left: 44, right: 16, top: 44, bottom: 44 },
+      xAxis: { type: "category", data: metricas.map(m => m[1]), axisLabel: { interval: 0, lineHeight: 15 } },
+      yAxis: { type: "value", min: Math.min(0.5, Math.floor(Math.min(...R.modelos.flatMap(n => metricas.map(m => m[0](R.metricas[n])))) * 20) / 20), interval: 0.05, axisLabel: { formatter: v => v.toFixed(2) },
+               max: Math.ceil(Math.max(...R.modelos.flatMap(n => metricas.map(m => m[0](R.metricas[n])))) * 20 + 0.001) / 20 },
       series: R.modelos.map((n, i) => ({
         name: etiqueta(n), type: "bar", barGap: "12%", itemStyle: { color: colores[n], borderRadius: [2, 2, 0, 0] },
-        data: metricas.map(m => R.metricas[n][m[0]]),
+        data: metricas.map(m => m[0](R.metricas[n])),
       })),
     });
   }

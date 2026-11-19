@@ -20,7 +20,8 @@
 <section class="kpis">
   <div class="kpi"><small>Tweets en el dataset</small><b>{{ (analisis.dataset.n_tweets if analisis else 1600000)|miles }}</b><span>{{ datos.n_muestra|miles }} usados para entrenar y evaluar</span></div>
   <div class="kpi"><small>Mejor accuracy</small><b>{{ mods.values()|map(attribute='accuracy')|max|pct }}</b><span>sobre {{ datos.n_test|miles }} tweets de evaluación</span></div>
-  <div class="kpi"><small>Mejor F1</small><b>{{ '%.3f'|format(mods.values()|map(attribute='f1')|max) }}</b><span>promedio ponderado por clase</span></div>
+  {% set mejor = mods|dictsort|sort(attribute='1.accuracy', reverse=True)|first %}
+  <div class="kpi"><small>Aciertos por clase</small><b>{{ '%.0f'|format(mejor[1].por_clase.positivo.recall * 100) }} / {{ '%.0f'|format(mejor[1].por_clase.negativo.recall * 100) }}&nbsp;%</b><span>positivos y negativos detectados por {{ mejor[0] }}</span></div>
   {% if analisis and analisis.manual %}
   <div class="kpi"><small>Tweets sobre marcas</small><b>{{ analisis.manual.modelos.values()|map(attribute='accuracy')|max|pct }}</b><span>accuracy en {{ analisis.manual.n }} tweets etiquetados por personas</span></div>
   {% endif %}
