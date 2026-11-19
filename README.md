@@ -127,46 +127,26 @@ propios se guardan en memoria (los últimos 8) y se pierden al reiniciar la app.
 
 ---
 
-## Parte 3 — falta (compañero 3)
+## Parte 3 — completada
 
-**Objetivo:** **análisis temporal** usando la columna `date` del dataset.
+**`/temporal`**: **análisis temporal** usando la columna `date` del dataset (`Mon Apr 06 22:19:45 PDT 2009`,
+parseada retirando la zona `PDT` antes de convertir a fecha).
 
-Formato de fecha en Sentiment140:
+### Qué incluye
 
-```
-Mon Apr 06 22:19:45 PDT 2009
-```
+- Granularidad elegible: **día, semana o mes**.
+- Línea de tiempo: cantidad de tweets **positivos y negativos** por periodo (barras apiladas).
+- **Ratio de positividad** por periodo (`positivos / total`), con la media del rango y la tendencia (al alza / a la baja / estable).
+- **Filtro de rango de fechas** (el dataset es sobre todo abril–junio 2009).
+- Fuente de datos: `data/processed/muestra_entrenamiento.csv` (ya trae `date`, `label`, `text`); sin modelos
+  entrenados muestra las etiquetas reales, y con modelos permite ver la **predicción de cada modelo o del consenso**
+  frente a la etiqueta real.
+- Hallazgos: periodo **más positivo y más negativo** (con mínimo de 10 tweets), periodo de mayor volumen y un
+  **recuadro de interpretación** (1–2 frases) para la presentación. Avisa de la cola 100 % negativa de junio,
+  que se debe al cambio en la recolección del dataset (ver `/analisis`), no a un cambio de opinión.
 
-Pandas puede parsearla, por ejemplo:
-
-```python
-df["fecha"] = pd.to_datetime(df["date"], errors="coerce")
-```
-
-`PDT` a veces molesta: si falla, quiten la zona con un replace (`" PDT"` → `""`) y vuelvan a parsear.
-
-### Qué hay que construir
-
-1. **Página `/temporal` de verdad**
-   - Elegir granularidad: día, semana o mes.
-   - Línea de tiempo: cantidad de tweets positivos y negativos.
-   - Ratio de positividad por periodo (`positivos / total`).
-   - Filtro de rango de fechas (el dataset es sobre todo abril–junio 2009).
-
-2. **Fuente de datos**
-   - Empezar con `data/processed/muestra_entrenamiento.csv` (ya tiene `date`, `label`, `text`).
-   - Opcional: permitir que el dashboard de la Parte 2 le pase predicciones nuevas (textos del usuario con fecha).
-   - No hace falta volver a entrenar modelos. Si quieren “sentimiento predicho vs etiqueta real”, usen `src.predict` sobre la muestra.
-
-3. **Hallazgos**
-   - Destacar el día con más tweets negativos y el más positivo.
-   - Un recuadro de interpretación (1–2 frases) para la presentación.
-
-### Criterio de “terminado”
-
-- Un gráfico de sentimiento a lo largo del tiempo que se pueda filtrar.
-- Números claros (totales, picos, tendencia).
-- Misma identidad visual que el resto de la app.
+La lógica está en `src/temporal.py` (`parsear_fecha`, `cargar_base`, `predecir_columna`, `resumir_temporal`)
+y la vista en `templates/temporal.html` (ECharts con la identidad visual del proyecto).
 
 ---
 
@@ -196,4 +176,4 @@ La Parte 1 guarda `label` como 0/1 (`1` = positivo).
 | Accuracy, F1, matriz de confusión | Parte 1 lista |
 | Aplicación web de análisis de texto | Parte 2 lista (texto individual y lotes / CSV) |
 | Dashboard de sentimiento | Parte 2 lista |
-| Análisis temporal | Parte 3 |
+| Análisis temporal | Parte 3 lista |

@@ -46,7 +46,7 @@
     <a class="card" href="{{ url_for('analizar') }}" style="text-decoration:none"><h3>{{ icon('text') }} Analizar texto</h3><p>Clasifica cualquier frase y compara la respuesta de cada modelo.</p></a>
     <a class="card" href="{{ url_for('metricas') }}" style="text-decoration:none"><h3>{{ icon('table') }} Métricas</h3><p>Accuracy, F1, matrices de confusión y cómo se calculan.</p></a>
     <a class="card" href="{{ url_for('analisis') }}" style="text-decoration:none"><h3>{{ icon('flask') }} Análisis</h3><p>Hallazgos principales con la evidencia estadística que los respalda.</p></a>
-    <a class="card dim" href="{{ url_for('temporal') }}" style="text-decoration:none"><h3>{{ icon('clock') }} Temporal</h3><p>Evolución del sentimiento en el tiempo. En desarrollo.</p></a>
+    <a class="card" href="{{ url_for('temporal') }}" style="text-decoration:none"><h3>{{ icon('clock') }} Temporal</h3><p>Evolución del sentimiento por día, semana o mes, con filtros de fecha.</p></a>
   </div>
 </section>
 {% endblock %}

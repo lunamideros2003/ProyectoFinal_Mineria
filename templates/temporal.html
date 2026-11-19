@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Análisis temporal{% endblock %}
+{% block content %}
+<section class="hero compact">
+  <h1>Análisis temporal</h1>
+  <p class="lead">Evolución del sentimiento por día, semana o mes a partir de la fecha de cada tweet. Filtra por rango de fechas y compara las etiquetas reales con la predicción de los modelos.</p>
+</section>
+
+{% if not hay_datos %}
+  <article class="card"><p>Todavía no hay datos temporales. Ejecuta <code>python -m src.train</code> o descarga el dataset con <code>python -m src.download</code>.</p></article>
+{% else %}
+<form class="panel" method="get" action="{{ url_for('temporal') }}" style="margin-bottom:18px">
+  <div class="toolbar" style="margin:0">
+    <div class="tabs small" role="tablist" aria-label="Granularidad">
+      {% for g in ['dia', 'semana', 'mes'] %}
+        <button type="submit" name="granularidad" value="{{ g }}" class="{{ 'on' if g == gran }}">{{ {'dia': 'Día', 'semana': 'Semana', 'mes': 'Mes'}[g] }}</button>
+      {% endfor %}
+    </div>
+    <label style="margin:0">Desde <input type="date" name="desde" value="{{ desde or '' }}" min="{{ min_fecha }}" max="{{ max_fecha }}" style="padding:8px 10px;border:1.5px solid var(--rule);border-radius:4px;background:var(--card)"></label>
+    <label style="margin:0">Hasta <input type="date" name="hasta" value="{{ hasta or '' }}" min="{{ min_fecha }}" max="{{ max_fecha }}" style="padding:8px 10px;border:1.5px solid var(--rule);border-radius:4px;background:var(--card)"></label>
+    <label style="margin:0">Sentimiento
+      <select name="vista" style="padding:8px 10px;border:1.5px solid var(--rule);border-radius:4px;background:var(--card)">
+        {% for v in vistas %}
+          <option value="{{ v }}" {{ 'selected' if v == vista }}>{{ 'Etiquetas reales' if v == 'real' else ('Votación' if v == 'Consenso' else v) }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn" type="submit">Filtrar {{ icon('arrow') }}</button>
+  </div>
+  {% if aviso %}<p class="muted" style="margin:10px 0 0">{{ aviso }}</p>{% endif %}
+</form>
+
+{% if r.vacio %}
+  <article class="card"><p>No hay tweets en el rango de fechas seleccionado. Prueba a ampliar el rango.</p></article>
+{% else %}
+<section class="kpis">
+  <div class="kpi">
+    <small>Tweets en el periodo</small>
+    <b>{{ r.n|miles }}</b>
+    <span>Del {{ r.periodos[0].fecha|fecha }} al {{ r.periodos[-1].fecha|fecha }}</span>
+  </div>
+  <div class="kpi">
+    <small>Positivos en el periodo</small>
+    <b class="pos-t">{{ r.pct_pos|pct }}</b>
+    <span>{{ r.n_pos|miles }} positivos · {{ r.n_neg|miles }} negativos</span>
+  </div>
+  <div class="kpi">
+    <small>Periodo más positivo</small>
+    <b class="txt">{{ r.pico_pos.etiqueta }}</b>
+    <span>{{ r.pico_pos.pct_pos|pct }} positivo en {{ r.pico_pos.n|miles }} tweets</span>
+  </div>
+  <div class="kpi">
+    <small>Periodo más negativo</small>
+    <b class="txt">{{ r.pico_neg.etiqueta }}</b>
+    <span>{{ r.pico_neg.pct_pos|pct }} positivo en {{ r.pico_neg.n|miles }} tweets</span>
+  </div>
+</section>
+
+<div class="panels p-2">
+  <section class="panel">
+    <h3>Volumen por periodo</h3>
+    <p class="hint">Tweets positivos y negativos en cada {{ {'dia': 'día', 'semana': 'semana', 'mes': 'mes'}[gran] }}.</p>
+    <div id="ch-vol" class="chart"></div>
+  </section>
+  <section class="panel">
+    <h3>Proporción de positivos</h3>
+    <p class="hint">Positivos / total por periodo. La línea marca la media del rango (tendencia {{ r.tendencia }}).</p>
+    <div id="ch-ratio" class="chart"></div>
+  </section>
+</div>
+
+<article class="card" style="margin-bottom:18px">
+  <h3>{{ icon('flask') }}Lectura para la presentación</h3>
+  <p style="margin-bottom:0">{{ r.interpretacion }} El mayor volumen se concentra en torno al <b>{{ r.pico_vol.etiqueta }}</b> ({{ r.pico_vol.n|miles }} tweets).</p>
+</article>
+
+<section class="panel">
+  <h3>Detalle por periodo</h3>
+  <p class="hint">{{ r.periodos|length }} periodos · {{ {'dia': 'día', 'semana': 'semana', 'mes': 'mes'}[gran] }} con más tweets primero en la tabla.</p>
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Periodo</th><th class="r">Tweets</th><th class="r">Positivos</th><th class="r">Negativos</th><th class="r">% positivo</th></tr></thead>
+      <tbody>
+        {% for p in r.periodos|sort(attribute='n', reverse=True) %}
+        <tr><td>{{ p.etiqueta }} <span class="muted num">{{ p.fecha }}</span></td><td class="r">{{ p.n|miles }}</td><td class="r">{{ p.pos|miles }}</td><td class="r">{{ p.neg|miles }}</td><td class="r">{{ p.pct_pos|pct }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if hay_datos and r and not r.vacio %}
+<script src="{{ url_for('static', filename='vendor/echarts.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script>
+  const R = {{ r|tojson }};
+  const T = SentinelCharts;
+  const pct = v => (v * 100).toFixed(1) + " %";
+  const etiq = R.periodos.map(p => p.etiqueta);
+
+  T.render("ch-vol", {
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+    legend: { top: 0, data: ["Positivos", "Negativos"] },
+    grid: { left: 56, right: 16, top: 40, bottom: 60 },
+    xAxis: { type: "category", data: etiq, axisLabel: { rotate: etiq.length > 12 ? 40 : 0, interval: Math.max(0, Math.floor(etiq.length / 12)) } },
+    yAxis: { type: "value" },
+    series: [
+      { name: "Positivos", type: "bar", stack: "t", data: R.periodos.map(p => p.pos), itemStyle: { color: T.c.pos } },
+      { name: "Negativos", type: "bar", stack: "t", data: R.periodos.map(p => p.neg), itemStyle: { color: T.c.neg } },
+    ],
+  });
+
+  T.render("ch-ratio", {
+    tooltip: { trigger: "axis", valueFormatter: pct },
+    legend: { top: 0, data: ["% positivo"] },
+    grid: { left: 56, right: 16, top: 40, bottom: 60 },
+    xAxis: { type: "category", data: etiq, axisLabel: { rotate: etiq.length > 12 ? 40 : 0, interval: Math.max(0, Math.floor(etiq.length / 12)) } },
+    yAxis: { type: "value", min: 0, max: 1, axisLabel: { formatter: v => Math.round(v * 100) + " %" } },
+    series: [{
+      name: "% positivo", type: "line", symbolSize: 5, lineStyle: { width: 2.5, color: T.c.pos },
+      itemStyle: { color: T.c.pos }, data: R.periodos.map(p => p.pct_pos),
+      markLine: { symbol: "none", silent: true, data: [{ yAxis: R.pct_pos }],
+        lineStyle: { color: T.c.ink, type: "dashed" },
+        label: { formatter: "Media " + pct(R.pct_pos), color: T.c.ink2, fontFamily: "Inter" } },
+    }],
+  });
+</script>
+{% endif %}
+{% endblock %}
