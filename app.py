@@ -9,7 +9,7 @@ from src.analysis import ANALISIS_PATH
 from src.curva import CURVA_PATH
 from src.curva import resumir as resumir_curva
 from src.dashboard import FUENTE_PROPIA, FUENTES, predecir_lote, resumir_lote, tabla_resultados
-from src.temporal import GRANULARIDADES, VISTAS, cargar_base, predecir_columna, resumir_temporal
+from src.temporal import GRANULARIDADES, VISTAS, cambio_recoleccion, cargar_base, evaluacion, predecir, resumir_temporal
 from src.config import SAMPLES_DIR
 from src.lote import (EJEMPLOS, MAX_BYTES, MAX_FILAS, ErrorDatos, leer_csv, leer_ejemplo,
                       leer_texto_pegado, listar_ejemplos, preparar)
@@ -207,55 +207,53 @@ def demasiado_grande(_):
                            max_filas=MAX_FILAS, max_mb=MAX_BYTES // 2**20, ejemplos=listar_ejemplos()), 413
 
 
+def _fecha_valida(valor: str | None) -> str | None:
+    """'2009-05-01' si es una fecha ISO válida; None en cualquier otro caso."""
+    try:
+        return date.fromisoformat((valor or "").strip()).isoformat()
+    except ValueError:
+        return None
+
+
 @app.route("/temporal")
 def temporal():
     gran = request.args.get("granularidad", "dia")
-    if gran not in GRANULARIDADES:
-        gran = "dia"
+    gran = gran if gran in GRANULARIDADES else "dia"
     vista = request.args.get("vista", "real")
-    if vista not in VISTAS:
+    vista = vista if vista in VISTAS else "real"
+    desde, hasta = _fecha_valida(request.args.get("desde")), _fecha_valida(request.args.get("hasta"))
+    if desde and hasta and desde > hasta:
+        desde, hasta = hasta, desde
+
+    if "temporal" not in _cache:
+        base = cargar_base()
+        _cache["temporal"] = {"base": base, "corte": None if base is None else cambio_recoleccion(base),
+                              "evaluacion": None if base is None else evaluacion(base), "pred": {}}
+    t = _cache["temporal"]
+    contexto = {"gran": gran, "desde": desde, "hasta": hasta, "aviso": None}
+    if t["base"] is None:
+        return render_template("temporal.html", hay_datos=False, r=None, vista="real", vistas=["real"], **contexto)
+
+    vistas = list(VISTAS) if modelos_listos() else ["real"]
+    if vista not in vistas:
+        contexto["aviso"] = "Los modelos todavía no están disponibles. Se muestran las etiquetas reales."
         vista = "real"
-    desde = (request.args.get("desde") or "").strip() or None
-    hasta = (request.args.get("hasta") or "").strip() or None
-    for clave in ("desde", "hasta"):
-        valor = {"desde": desde, "hasta": hasta}[clave]
-        if valor:
-            try:
-                date.fromisoformat(valor)
-            except ValueError:
-                if clave == "desde":
-                    desde = None
-                else:
-                    hasta = None
-
-    if _cache.get("temporal_base") is None:
-        _cache["temporal_base"] = cargar_base()
-    base = _cache["temporal_base"]
-    if base is None:
-        return render_template("temporal.html", hay_datos=False, r=None, gran=gran,
-                               vista="real", vistas=["real"], desde=desde, hasta=hasta,
-                               min_fecha=None, max_fecha=None, aviso=None)
-
-    min_fecha = base["fecha"].min().strftime("%Y-%m-%d")
-    max_fecha = base["fecha"].max().strftime("%Y-%m-%d")
-    modelos_ok = modelos_listos()
-    vistas = list(VISTAS) if modelos_ok else ["real"]
-    aviso = None
-    valores = None
-    if vista != "real":
-        if not modelos_ok:
-            aviso = "Los modelos todavía no están disponibles: se muestran las etiquetas reales."
-            vista = "real"
-        else:
-            _cache.setdefault("temporal_pred", {})
-            if vista not in _cache["temporal_pred"]:
-                vectorizer, modelos, _ = obtener_artefactos()
-                _cache["temporal_pred"][vista] = predecir_columna(base, vectorizer, modelos, vista)
-            valores = _cache["temporal_pred"][vista]
-    r = resumir_temporal(base, gran, desde, hasta, valores)
-    return render_template("temporal.html", hay_datos=True, r=r, gran=gran,
-                           vista=vista, vistas=vistas, desde=desde, hasta=hasta,
-                           min_fecha=min_fecha, max_fecha=max_fecha, aviso=aviso)
+    if vista == "real":
+        base, prediccion = t["base"], None
+    else:
+        # Solo tweets de evaluación: predecir sobre los de entrenamiento inflaría el acuerdo con la etiqueta real.
+        base = t["evaluacion"]
+        if vista not in t["pred"]:
+            vectorizer, modelos, _ = obtener_artefactos()
+            t["pred"][vista] = predecir(base, vectorizer, modelos, vista)
+        prediccion = t["pred"][vista]
+    r = resumir_temporal(base, gran, desde, hasta, prediccion, t["corte"])
+    return render_template("temporal.html", hay_datos=True, r=r, vista=vista, vistas=vistas,
+                           corte=None if t["corte"] is None else t["corte"].strftime("%Y-%m-%d"),
+                           corte_hora=None if t["corte"] is None else t["corte"].strftime("%H:%M"),
+                           min_fecha=t["base"]["fecha"].min().strftime("%Y-%m-%d"),
+                           max_fecha=t["base"]["fecha"].max().strftime("%Y-%m-%d"),
+                           n_total=len(t["base"]), n_evaluacion=len(t["evaluacion"]), **contexto)
 
 
 if __name__ == "__main__":

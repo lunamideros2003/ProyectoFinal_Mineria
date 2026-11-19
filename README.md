@@ -134,19 +134,27 @@ parseada retirando la zona `PDT` antes de convertir a fecha).
 
 ### Qué incluye
 
-- Granularidad elegible: **día, semana o mes**.
+- Granularidad elegible: **día, semana o mes**. Los periodos sin tweets se mantienen en el eje (el dataset
+  tiene 48 días con datos en un rango de 81), así que los huecos se ven como cortes en la línea.
 - Línea de tiempo: cantidad de tweets **positivos y negativos** por periodo (barras apiladas).
-- **Ratio de positividad** por periodo (`positivos / total`), con la media del rango y la tendencia (al alza / a la baja / estable).
+- **Ratio de positividad** por periodo (`positivos / total`), con la media del rango.
 - **Filtro de rango de fechas** (el dataset es sobre todo abril–junio 2009).
-- Fuente de datos: `data/processed/muestra_entrenamiento.csv` (ya trae `date`, `label`, `text`); sin modelos
-  entrenados muestra las etiquetas reales, y con modelos permite ver la **predicción de cada modelo o del consenso**
-  frente a la etiqueta real.
-- Hallazgos: periodo **más positivo y más negativo** (con mínimo de 10 tweets), periodo de mayor volumen y un
-  **recuadro de interpretación** (1–2 frases) para la presentación. Avisa de la cola 100 % negativa de junio,
-  que se debe al cambio en la recolección del dataset (ver `/analisis`), no a un cambio de opinión.
+- Vistas: **etiquetas reales** (los 200 000 tweets de la muestra) o la **predicción de cada modelo o de la
+  votación**. Las predicciones se calculan solo sobre los 40 000 tweets de evaluación (`split == "test"`), que
+  los modelos no vieron al entrenar, y se comparan con la proporción real de esos mismos tweets.
+- **Cambio en la recolección**: el último tweet positivo es del 16 de junio de 2009 a las 08:40; a partir de ahí
+  solo hay negativos (hallazgo 01 de `/analisis`). El corte se calcula a partir de los datos. Los periodos que
+  lo alcanzan se sombrean y **no cuentan** para los extremos ni la tendencia. En las vistas de modelo se muestra
+  qué proporción de positivos estima el modelo en ese tramo (votación: ~19 % frente al 0 % de las etiquetas).
+- Hallazgos:
+  - **Periodo más positivo y más negativo**: se exige un mínimo de max(100, 1 % de los tweets válidos) y se
+    ordena por el intervalo de Wilson al 95 %, para que un periodo con pocos tweets no gane por azar.
+  - **Tendencia**: recta ponderada por volumen sobre el % positivo antes del corte; se informa el cambio en puntos
+    a lo largo del rango (estable si es menor de 2 puntos).
+  - Periodo de mayor volumen y un recuadro de interpretación para la presentación.
 
-La lógica está en `src/temporal.py` (`parsear_fecha`, `cargar_base`, `predecir_columna`, `resumir_temporal`)
-y la vista en `templates/temporal.html` (ECharts con la identidad visual del proyecto).
+La lógica está en `src/temporal.py` (`parsear_fecha`, `cargar_base`, `cambio_recoleccion`, `evaluacion`,
+`predecir`, `resumir_temporal`) y la vista en `templates/temporal.html`.
 
 ---
 

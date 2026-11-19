@@ -1,5 +1,13 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
+{# Concordancia de género: el día / la semana / el mes. #}
+{% set g = {
+  'dia':    {'u': 'día',    'us': 'días',    'el': 'el', 'esos': 'Esos', 'o': 'o', 'os': 'os', 'un': 'un'},
+  'semana': {'u': 'semana', 'us': 'semanas', 'el': 'la', 'esos': 'Esas', 'o': 'a', 'os': 'as', 'un': 'una'},
+  'mes':    {'u': 'mes',    'us': 'meses',   'el': 'el', 'esos': 'Esos', 'o': 'o', 'os': 'os', 'un': 'un'},
+}[gran] %}
+{% set pre = 'la del ' if gran == 'semana' else '' %}{% set unidad = g.u %}{% set unidades = g.us %}
+{% set nombre_vista = 'Etiquetas reales' if vista == 'real' else ('Votación' if vista == 'Consenso' else vista) %}
 {% block title %}Análisis temporal{% endblock %}
 {% block content %}
 <section class="hero compact">
@@ -8,82 +16,111 @@
 </section>
 
 {% if not hay_datos %}
-  <article class="card"><p>Todavía no hay datos temporales. Ejecuta <code>python -m src.train</code> o descarga el dataset con <code>python -m src.download</code>.</p></article>
+  <article class="card"><p>Los datos temporales todavía no están disponibles. Aparecerán cuando se entrenen los modelos, que generan la muestra con la fecha de cada tweet.</p></article>
 {% else %}
-<form class="panel" method="get" action="{{ url_for('temporal') }}" style="margin-bottom:18px">
-  <div class="toolbar" style="margin:0">
-    <div class="tabs small" role="tablist" aria-label="Granularidad">
-      {% for g in ['dia', 'semana', 'mes'] %}
-        <button type="submit" name="granularidad" value="{{ g }}" class="{{ 'on' if g == gran }}">{{ {'dia': 'Día', 'semana': 'Semana', 'mes': 'Mes'}[g] }}</button>
-      {% endfor %}
-    </div>
-    <label style="margin:0">Desde <input type="date" name="desde" value="{{ desde or '' }}" min="{{ min_fecha }}" max="{{ max_fecha }}" style="padding:8px 10px;border:1.5px solid var(--rule);border-radius:4px;background:var(--card)"></label>
-    <label style="margin:0">Hasta <input type="date" name="hasta" value="{{ hasta or '' }}" min="{{ min_fecha }}" max="{{ max_fecha }}" style="padding:8px 10px;border:1.5px solid var(--rule);border-radius:4px;background:var(--card)"></label>
-    <label style="margin:0">Sentimiento
-      <select name="vista" style="padding:8px 10px;border:1.5px solid var(--rule);border-radius:4px;background:var(--card)">
-        {% for v in vistas %}
-          <option value="{{ v }}" {{ 'selected' if v == vista }}>{{ 'Etiquetas reales' if v == 'real' else ('Votación' if v == 'Consenso' else v) }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button class="btn" type="submit">Filtrar {{ icon('arrow') }}</button>
+<form class="panel filtros" method="get" action="{{ url_for('temporal') }}">
+  <div class="tabs small" role="group" aria-label="Agrupar por">
+    {% for g, txt in [('dia', 'Día'), ('semana', 'Semana'), ('mes', 'Mes')] %}
+      <button type="submit" name="granularidad" value="{{ g }}" class="{{ 'on' if g == gran }}">{{ txt }}</button>
+    {% endfor %}
   </div>
-  {% if aviso %}<p class="muted" style="margin:10px 0 0">{{ aviso }}</p>{% endif %}
+  <input type="hidden" name="granularidad" value="{{ gran }}">
+  <label>Desde <input type="date" name="desde" value="{{ desde or '' }}" min="{{ min_fecha }}" max="{{ max_fecha }}"></label>
+  <label>Hasta <input type="date" name="hasta" value="{{ hasta or '' }}" min="{{ min_fecha }}" max="{{ max_fecha }}"></label>
+  <label>Sentimiento
+    <select name="vista">
+      {% for v in vistas %}
+        <option value="{{ v }}" {{ 'selected' if v == vista }}>{{ 'Etiquetas reales' if v == 'real' else ('Votación de los tres modelos' if v == 'Consenso' else v) }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn" type="submit">Aplicar</button>
+  {% if desde or hasta or vista != 'real' %}<a class="link" href="{{ url_for('temporal', granularidad=gran) }}">Quitar filtros</a>{% endif %}
 </form>
+{% if aviso %}<p class="aviso">{{ aviso }}</p>{% endif %}
+{% if vista != 'real' %}
+  <p class="nota">Predicción de <b>{{ nombre_vista }}</b> sobre los {{ n_evaluacion|miles }} tweets de evaluación, que los modelos no vieron al entrenar. La línea discontinua muestra la proporción real en esos mismos tweets.</p>
+{% endif %}
 
 {% if r.vacio %}
   <article class="card"><p>No hay tweets en el rango de fechas seleccionado. Prueba a ampliar el rango.</p></article>
 {% else %}
 <section class="kpis">
   <div class="kpi">
-    <small>Tweets en el periodo</small>
+    <small>Tweets en el rango</small>
     <b>{{ r.n|miles }}</b>
-    <span>Del {{ r.periodos[0].fecha|fecha }} al {{ r.periodos[-1].fecha|fecha }}</span>
+    <span>Del {{ r.desde|fecha(con_anio=False) }} al {{ r.hasta|fecha }}</span>
   </div>
   <div class="kpi">
-    <small>Positivos en el periodo</small>
+    <small>Positivos{{ ' según ' ~ nombre_vista if vista != 'real' }}</small>
     <b class="pos-t">{{ r.pct_pos|pct }}</b>
-    <span>{{ r.n_pos|miles }} positivos · {{ r.n_neg|miles }} negativos</span>
+    <span>{% if vista != 'real' %}Real: {{ r.pct_real|pct }}{% else %}{{ r.n_pos|miles }} positivos y {{ r.n_neg|miles }} negativos{% endif %}</span>
   </div>
   <div class="kpi">
-    <small>Periodo más positivo</small>
-    <b class="txt">{{ r.pico_pos.etiqueta }}</b>
-    <span>{{ r.pico_pos.pct_pos|pct }} positivo en {{ r.pico_pos.n|miles }} tweets</span>
+    <small>{{ unidad|capitalize }} más positiv{{ g.o }}</small>
+    {% if r.pico_pos %}
+      <b class="txt">{{ r.pico_pos.etiqueta }}</b>
+      <span>{{ r.pico_pos.pct_pos|pct }} positivos en {{ r.pico_pos.n|miles }} tweets</span>
+    {% else %}<b class="txt">Sin datos suficientes</b><span>Hacen falta al menos dos periodos comparables.</span>{% endif %}
   </div>
   <div class="kpi">
-    <small>Periodo más negativo</small>
-    <b class="txt">{{ r.pico_neg.etiqueta }}</b>
-    <span>{{ r.pico_neg.pct_pos|pct }} positivo en {{ r.pico_neg.n|miles }} tweets</span>
+    <small>{{ unidad|capitalize }} más negativ{{ g.o }}</small>
+    {% if r.pico_neg %}
+      <b class="txt">{{ r.pico_neg.etiqueta }}</b>
+      <span>{{ r.pico_neg.pct_pos|pct }} positivos en {{ r.pico_neg.n|miles }} tweets</span>
+    {% else %}<b class="txt">Sin datos suficientes</b><span>Hacen falta al menos dos periodos comparables.</span>{% endif %}
   </div>
 </section>
 
+{% if r.afectados.n %}
+<article class="card corte">
+  <h3>{{ icon('flask') }}Cambio en la recolección del dataset</h3>
+  <p>Desde el {{ corte|fecha }} a las {{ corte_hora }} el dataset solo contiene tweets negativos, porque cambió la forma de recolectarlos (<a href="{{ url_for('analisis') }}">hallazgo 01</a>). {{ g.esos }} {{ unidades }} aparecen sombread{{ g.os }} en los gráficos y no cuentan para {{ g.el }} {{ unidad }} más positiv{{ g.o }}, {{ g.el }} más negativ{{ g.o }} ni la tendencia.</p>
+  {% if vista != 'real' %}
+  <p style="margin-bottom:0">En los {{ r.afectados.n|miles }} tweets posteriores al cambio la etiqueta real es {{ r.afectados.pct_real|pct }} positiva, pero <b>{{ nombre_vista }}</b> clasifica como positivos un <b>{{ r.afectados.pct_pos|pct }}</b> (antes del cambio, {{ r.validos.pct_pos|pct }} frente a {{ r.validos.pct_real|pct }} real). El texto de esos tweets no es uniformemente negativo: el 0 % sale de cómo se recolectaron, no de su contenido.</p>
+  {% endif %}
+</article>
+{% endif %}
+
 <div class="panels p-2">
   <section class="panel">
-    <h3>Volumen por periodo</h3>
-    <p class="hint">Tweets positivos y negativos en cada {{ {'dia': 'día', 'semana': 'semana', 'mes': 'mes'}[gran] }}.</p>
+    <h3>Volumen por {{ unidad }}</h3>
+    <p class="hint">Tweets {{ 'que ' ~ nombre_vista ~ ' clasifica como ' if vista != 'real' }}positivos y negativos.{% if r.n_vacios %} {{ r.n_vacios }} {{ unidades if r.n_vacios > 1 else unidad }} del rango no tienen tweets.{% endif %}</p>
     <div id="ch-vol" class="chart"></div>
   </section>
   <section class="panel">
     <h3>Proporción de positivos</h3>
-    <p class="hint">Positivos / total por periodo. La línea marca la media del rango (tendencia {{ r.tendencia }}).</p>
+    <p class="hint">Positivos sobre el total de cada {{ unidad }}. La línea horizontal marca la media del rango.</p>
     <div id="ch-ratio" class="chart"></div>
   </section>
 </div>
 
 <article class="card" style="margin-bottom:18px">
-  <h3>{{ icon('flask') }}Lectura para la presentación</h3>
-  <p style="margin-bottom:0">{{ r.interpretacion }} El mayor volumen se concentra en torno al <b>{{ r.pico_vol.etiqueta }}</b> ({{ r.pico_vol.n|miles }} tweets).</p>
+  <h3>{{ icon('chart') }}Lectura para la presentación</h3>
+  <p style="margin-bottom:0">
+    Entre el {{ r.desde|fecha(con_anio=False) }} y el {{ r.hasta|fecha }}, el {{ r.pct_pos|pct }} de los tweets {{ 'son positivos' if vista == 'real' else 'se clasifican como positivos' }}.
+    {% if r.cambio is not none %}
+      {{ 'Antes del cambio en la recolección, la' if r.afectados.n else 'La' }} proporción de positivos
+      {% if r.tendencia == 'estable' %}se mantiene estable{% else %}tiende {{ r.tendencia }}{% endif %}
+      ({{ '%+.1f'|format(r.cambio * 100) }} puntos a lo largo del rango).
+    {% endif %}
+    {% if r.pico_pos and r.pico_neg %}
+      {{ g.el|capitalize }} {{ unidad }} más positiv{{ g.o }} es {{ pre }}{{ r.pico_pos.etiqueta }} ({{ r.pico_pos.pct_pos|pct }}) y {{ g.el }} más negativ{{ g.o }}, {{ pre }}{{ r.pico_neg.etiqueta }} ({{ r.pico_neg.pct_pos|pct }}).
+    {% endif %}
+    El mayor volumen se concentra en {{ pre }}{{ r.pico_vol.etiqueta }}, con {{ r.pico_vol.n|miles }} tweets.
+    {% if r.afectados.n and vista == 'real' %}La caída a 0 % de positivos al final refleja la recolección, no un cambio de opinión.{% endif %}
+  </p>
 </article>
 
 <section class="panel">
-  <h3>Detalle por periodo</h3>
-  <p class="hint">{{ r.periodos|length }} periodos · {{ {'dia': 'día', 'semana': 'semana', 'mes': 'mes'}[gran] }} con más tweets primero en la tabla.</p>
+  <h3>Detalle por {{ unidad }}</h3>
+  <p class="hint">{{ r.n_periodos }} {{ unidades if r.n_periodos > 1 else unidad }} con tweets, en orden cronológico. Para optar a más positiv{{ g.o }} o más negativ{{ g.o }}, {{ g.un }} {{ unidad }} necesita al menos {{ r.minimo_extremo|miles }} tweets.</p>
   <div class="table-wrap">
     <table class="data">
-      <thead><tr><th>Periodo</th><th class="r">Tweets</th><th class="r">Positivos</th><th class="r">Negativos</th><th class="r">% positivo</th></tr></thead>
+      <thead><tr><th>{{ unidad|capitalize }}</th><th class="r">Tweets</th><th class="r">Positivos</th><th class="r">Negativos</th><th class="r">% positivo</th>{% if vista != 'real' %}<th class="r">% real</th>{% endif %}</tr></thead>
       <tbody>
-        {% for p in r.periodos|sort(attribute='n', reverse=True) %}
-        <tr><td>{{ p.etiqueta }} <span class="muted num">{{ p.fecha }}</span></td><td class="r">{{ p.n|miles }}</td><td class="r">{{ p.pos|miles }}</td><td class="r">{{ p.neg|miles }}</td><td class="r">{{ p.pct_pos|pct }}</td></tr>
+        {% for p in r.periodos if p.n %}
+        <tr><td>{{ p.etiqueta }}{% if p.afectado %} <span class="chip neutro">Cambio en la recolección</span>{% endif %}</td><td class="r">{{ p.n|miles }}</td><td class="r">{{ p.pos|miles }}</td><td class="r">{{ p.neg|miles }}</td><td class="r">{{ p.pct_pos|pct }}</td>{% if vista != 'real' %}<td class="r">{{ p.pct_real|pct }}</td>{% endif %}</tr>
         {% endfor %}
       </tbody>
     </table>
@@ -99,35 +136,54 @@
 <script src="{{ url_for('static', filename='js/charts.js') }}"></script>
 <script>
   const R = {{ r|tojson }};
+  const MODELO = {{ (nombre_vista if vista != 'real' else '')|tojson }};
   const T = SentinelCharts;
-  const pct = v => (v * 100).toFixed(1) + " %";
+  const pct = v => v == null ? "Sin tweets" : (v * 100).toFixed(1) + " %";
   const etiq = R.periodos.map(p => p.etiqueta);
+  const ejeX = { type: "category", data: etiq,
+    axisLabel: { rotate: etiq.length > 12 ? 40 : 0, interval: Math.max(0, Math.floor(etiq.length / 12)) } };
+
+  // Sombreado de los periodos posteriores al cambio en la recolección.
+  const primero = R.periodos.findIndex(p => p.afectado);
+  const sombra = primero < 0 ? undefined : {
+    silent: true, itemStyle: { color: "rgba(217, 87, 59, 0.08)" },
+    label: { show: true, position: "insideTop", formatter: "Cambio en la\nrecolección", color: T.c.neg, fontFamily: "Inter", fontSize: 11 },
+    data: [[{ xAxis: etiq[primero] }, { xAxis: etiq[etiq.length - 1] }]],
+  };
 
   T.render("ch-vol", {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
     legend: { top: 0, data: ["Positivos", "Negativos"] },
     grid: { left: 56, right: 16, top: 40, bottom: 60 },
-    xAxis: { type: "category", data: etiq, axisLabel: { rotate: etiq.length > 12 ? 40 : 0, interval: Math.max(0, Math.floor(etiq.length / 12)) } },
+    xAxis: ejeX,
     yAxis: { type: "value" },
     series: [
-      { name: "Positivos", type: "bar", stack: "t", data: R.periodos.map(p => p.pos), itemStyle: { color: T.c.pos } },
+      { name: "Positivos", type: "bar", stack: "t", data: R.periodos.map(p => p.pos), itemStyle: { color: T.c.pos }, markArea: sombra },
       { name: "Negativos", type: "bar", stack: "t", data: R.periodos.map(p => p.neg), itemStyle: { color: T.c.neg } },
     ],
   });
 
+  const series = [{
+    name: MODELO || "% positivo", type: "line", symbolSize: 5, showSymbol: true, showAllSymbol: true, connectNulls: false,
+    lineStyle: { width: 2.5, color: T.c.pos }, itemStyle: { color: T.c.pos },
+    data: R.periodos.map(p => p.pct_pos), markArea: sombra,
+    markLine: { symbol: "none", silent: true, data: [{ yAxis: R.pct_pos }],
+      lineStyle: { color: T.c.ink, type: "dashed" },
+      label: { position: "insideEndTop", formatter: "Media " + pct(R.pct_pos), color: T.c.ink2, fontFamily: "Inter" } },
+  }];
+  if (MODELO) series.push({
+    name: "Real", type: "line", symbolSize: 4, connectNulls: false,
+    lineStyle: { width: 1.5, type: "dashed", color: T.c.ink3 }, itemStyle: { color: T.c.ink3 },
+    data: R.periodos.map(p => p.pct_real),
+  });
+
   T.render("ch-ratio", {
     tooltip: { trigger: "axis", valueFormatter: pct },
-    legend: { top: 0, data: ["% positivo"] },
+    legend: { top: 0, data: series.map(s => s.name) },
     grid: { left: 56, right: 16, top: 40, bottom: 60 },
-    xAxis: { type: "category", data: etiq, axisLabel: { rotate: etiq.length > 12 ? 40 : 0, interval: Math.max(0, Math.floor(etiq.length / 12)) } },
+    xAxis: ejeX,
     yAxis: { type: "value", min: 0, max: 1, axisLabel: { formatter: v => Math.round(v * 100) + " %" } },
-    series: [{
-      name: "% positivo", type: "line", symbolSize: 5, lineStyle: { width: 2.5, color: T.c.pos },
-      itemStyle: { color: T.c.pos }, data: R.periodos.map(p => p.pct_pos),
-      markLine: { symbol: "none", silent: true, data: [{ yAxis: R.pct_pos }],
-        lineStyle: { color: T.c.ink, type: "dashed" },
-        label: { formatter: "Media " + pct(R.pct_pos), color: T.c.ink2, fontFamily: "Inter" } },
-    }],
+    series,
   });
 </script>
 {% endif %}
