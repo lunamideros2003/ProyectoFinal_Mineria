@@ -22,7 +22,7 @@
 <div class="table-wrap">
 <table class="data metricas">
   <thead>
-    <tr><th rowspan="2">Modelo</th><th class="r" rowspan="2">Accuracy</th><th class="r" rowspan="2">Intervalo de confianza 95 %</th>
+    <tr><th rowspan="2">Modelo</th><th class="r" rowspan="2">Accuracy</th><th class="r" rowspan="2">Intervalo de confianza 95 %</th><th class="r" rowspan="2">AUC-ROC</th>
         <th class="r grupo" colspan="3">Clase positiva</th><th class="r grupo" colspan="3">Clase negativa</th></tr>
     <tr><th class="r">Precisión</th><th class="r">Recall</th><th class="r">F1</th><th class="r">Precisión</th><th class="r">Recall</th><th class="r">F1</th></tr>
   </thead>
@@ -34,6 +34,7 @@
       <td><strong>{{ nombre }}</strong></td>
       <td class="r">{{ '%.4f'|format(m.accuracy) }}</td>
       <td class="r muted">{% if ic %}{{ '%.3f'|format(ic[0]) }} a {{ '%.3f'|format(ic[1]) }}{% else %}-{% endif %}</td>
+      <td class="r">{{ '%.4f'|format(m.roc.auc) if m.roc else '-' }}</td>
       {% for c in ['positivo', 'negativo'] %}
       <td class="r">{{ '%.4f'|format(pc[c].precision) }}</td>
       <td class="r">{{ '%.4f'|format(pc[c].recall) }}</td>
@@ -86,6 +87,38 @@
   </div>
 </section>
 
+
+{% set con_roc = datos.modelos.values()|selectattr('roc')|list|length == datos.modelos|length %}
+{% if con_roc %}
+<section class="section">
+  <h2>Curva ROC</h2>
+  <p class="muted">Cada modelo da una puntuación a cada tweet (probabilidad de ser positivo en Naive Bayes y Random Forest, distancia a la frontera en SVM). Al mover el umbral a partir del cual se dice "positivo" se encuentran más positivos, pero también aparecen más falsas alarmas. La curva recorre todos los umbrales.</p>
+  <div class="panels p-21">
+    <section class="panel">
+      <div id="ch-roc" class="chart tall"></div>
+    </section>
+    <section class="panel">
+      <h3>Área bajo la curva (AUC)</h3>
+      <p class="hint">Probabilidad de que el modelo puntúe más alto un tweet positivo que uno negativo, ambos elegidos al azar.</p>
+      <div class="stats" style="margin-top:14px">
+        {% for nombre, m in datos.modelos.items()|sort(attribute='1.roc.auc', reverse=true) %}
+        <div class="stat"><small>{{ nombre }}</small><b>{{ '%.3f'|format(m.roc.auc) }}</b></div>
+        {% endfor %}
+      </div>
+      <p style="margin:16px 0 0;font-size:.92rem">0.5 equivale al azar (la diagonal) y 1 a separar las dos clases sin errores. A diferencia de la accuracy, no depende de un umbral concreto: mide lo bien que el modelo <b>ordena</b> los tweets.</p>
+    </section>
+  </div>
+  <dl class="math" style="margin-top:24px">
+    <dt>Tasa de verdaderos positivos</dt>
+    <dd>\(\displaystyle TPR = \frac{TP}{TP + FN}\)<small>Es el recall de la clase positiva: eje vertical.</small></dd>
+    <dt>Tasa de falsos positivos</dt>
+    <dd>\(\displaystyle FPR = \frac{FP}{FP + TN}\)<small>Negativos marcados como positivos: eje horizontal.</small></dd>
+    <dt>AUC</dt>
+    <dd>\(\displaystyle AUC = \int_0^1 TPR \, d(FPR) = P\big(s(x^+) > s(x^-)\big)\)<small>Área bajo la curva. Equivale a la probabilidad de que un positivo \(x^+\) reciba más puntuación \(s\) que un negativo \(x^-\).</small></dd>
+  </dl>
+</section>
+{% endif %}
+
 <section class="section">
   <h2>Cómo se calculan</h2>
   <p class="muted">
@@ -122,5 +155,36 @@
 
   <p style="margin-top:28px"><a class="btn ghost" href="{{ url_for('analisis') }}">Ver el análisis de resultados {{ icon('arrow') }}</a></p>
 </section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if datos and datos.modelos.values()|selectattr('roc')|list|length == datos.modelos|length %}
+<script src="{{ url_for('static', filename='vendor/echarts.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script>
+  const ROC = {{ datos.modelos|tojson }};
+  const T = SentinelCharts;
+  const colores = { "Naive Bayes": T.c.info, "SVM": T.c.pos, "Random Forest": T.c.ink3 };
+  const series = Object.entries(ROC).map(([n, m]) => ({
+    name: `${n} (AUC ${m.roc.auc.toFixed(3)})`, type: "line", showSymbol: false, smooth: false,
+    lineStyle: { width: 2.2, color: colores[n] }, itemStyle: { color: colores[n] },
+    data: m.roc.fpr.map((x, i) => [x, m.roc.tpr[i]]),
+  }));
+  series.push({ name: "Azar", type: "line", showSymbol: false, silent: true, data: [[0, 0], [1, 1]],
+                lineStyle: { type: "dashed", width: 1.2, color: T.c.rule }, itemStyle: { color: T.c.rule } });
+  T.render("ch-roc", {
+    tooltip: { trigger: "axis", axisPointer: { type: "line" },
+               formatter: ps => `Falsos positivos ${(ps[0].value[0] * 100).toFixed(0)} %<br>` +
+                 ps.filter(p => p.seriesName !== "Azar").map(p => `${p.marker}${p.seriesName.split(" (")[0]}: ${(p.value[1] * 100).toFixed(1)} % de positivos detectados`).join("<br>") },
+    legend: { top: 0 },
+    grid: { left: 56, right: 20, top: 56, bottom: 52 },
+    xAxis: { type: "value", min: 0, max: 1, name: "Tasa de falsos positivos", nameLocation: "middle", nameGap: 30,
+             axisLabel: { formatter: v => Math.round(v * 100) + " %" } },
+    yAxis: { type: "value", min: 0, max: 1, name: "Tasa de verdaderos positivos", nameLocation: "middle", nameGap: 42,
+             axisLabel: { formatter: v => Math.round(v * 100) + " %" } },
+    series,
+  });
+</script>
 {% endif %}
 {% endblock %}

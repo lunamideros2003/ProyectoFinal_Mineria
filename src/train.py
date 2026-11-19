@@ -1,7 +1,10 @@
 import json
+import sys
 from pathlib import Path
 
 import joblib
+import numpy as np
+import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -11,6 +14,8 @@ from sklearn.metrics import (
     f1_score,
     precision_score,
     recall_score,
+    roc_auc_score,
+    roc_curve,
 )
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import MultinomialNB
@@ -87,6 +92,40 @@ def metricas_por_clase(cm) -> dict:
     return {"positivo": pos, "negativo": neg, "f1_macro": round((pos["f1"] + neg["f1"]) / 2, 4)}
 
 
+def puntuacion_positiva(modelo, X) -> np.ndarray:
+    """Puntuación continua de la clase positiva: probabilidad (Naive Bayes, Random
+    Forest) o distancia al hiperplano (SVM). La ROC solo necesita que ordene bien."""
+    if hasattr(modelo, "predict_proba"):
+        return modelo.predict_proba(X)[:, 1]
+    return modelo.decision_function(X)
+
+
+def metricas_roc(y_true, puntuacion, puntos: int = 101) -> dict:
+    """AUC y curva ROC resumida en una rejilla fija de tasas de falsos positivos."""
+    fpr, tpr, _ = roc_curve(y_true, puntuacion)
+    rejilla = np.linspace(0, 1, puntos)
+    return {
+        "auc": round(float(roc_auc_score(y_true, puntuacion)), 4),
+        "fpr": [round(float(v), 4) for v in rejilla],
+        "tpr": [round(float(v), 4) for v in np.interp(rejilla, fpr, tpr)],
+    }
+
+
+def actualizar_roc() -> dict:
+    """Añade la ROC a metrics.json con los modelos ya entrenados (sin reentrenar)."""
+    from src.predict import cargar_artefactos
+
+    vectorizer, modelos, resultados = cargar_artefactos()
+    test = pd.read_csv(SAMPLE_PATH, usecols=["texto_limpio", "label", "split"])
+    test = test[test["split"] == "test"]
+    X = vectorizer.transform(test["texto_limpio"].fillna(""))
+    for nombre, modelo in modelos.items():
+        resultados["modelos"][nombre]["roc"] = metricas_roc(test["label"], puntuacion_positiva(modelo, X))
+        print(f"  {nombre}: AUC={resultados['modelos'][nombre]['roc']['auc']}")
+    METRICS_PATH.write_text(json.dumps(resultados, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return resultados
+
+
 def metricas_modelo(y_true, y_pred) -> dict:
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     return {
@@ -139,6 +178,7 @@ def entrenar() -> dict:
         modelo.fit(X_train_vec, y_train)
         pred = modelo.predict(X_test_vec)
         resultados["modelos"][nombre] = metricas_modelo(y_test, pred)
+        resultados["modelos"][nombre]["roc"] = metricas_roc(y_test, puntuacion_positiva(modelo, X_test_vec))
         joblib.dump(modelo, MODEL_FILES[nombre], compress=3)
         print(f"  accuracy={resultados['modelos'][nombre]['accuracy']}  f1={resultados['modelos'][nombre]['f1']}")
 
@@ -156,4 +196,7 @@ def modelos_listos() -> bool:
 
 
 if __name__ == "__main__":
-    entrenar()
+    if "--roc" in sys.argv:  # python -m src.train --roc
+        actualizar_roc()
+    else:
+        entrenar()

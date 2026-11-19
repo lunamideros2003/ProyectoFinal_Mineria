@@ -34,7 +34,7 @@ de Google Fonts ni de CDNs, así que no hay rastreo de terceros y la app funcion
   - **Naive Bayes** (`MultinomialNB`)
   - **SVM** lineal (`LinearSVC`, adecuado para texto)
   - **Random Forest**
-- Métricas en conjunto de prueba: **Accuracy**, **F1**, precision, recall y **matriz de confusión**.
+- Métricas en conjunto de prueba: **Accuracy**, precisión, recall y **F1 por clase**, **matriz de confusión** y **curva ROC / AUC** (`python -m src.train --roc` la recalcula sin reentrenar).
 - App Flask con:
   - Inicio (resumen de las 3 partes)
   - Página de métricas (con fórmulas e IC 95 %)
