@@ -96,7 +96,7 @@
 </div>
 
 <article class="card" style="margin-bottom:18px">
-  <h3>{{ icon('chart') }}Lectura para la presentación</h3>
+  <h3>{{ icon('chart') }}Lectura</h3>
   <p style="margin-bottom:0">
     Entre el {{ r.desde|fecha(con_anio=False) }} y el {{ r.hasta|fecha }}, el {{ r.pct_pos|pct }} de los tweets {{ 'son positivos' if vista == 'real' else 'se clasifican como positivos' }}.
     {% if r.cambio is not none %}

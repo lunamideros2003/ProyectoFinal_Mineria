@@ -151,7 +151,7 @@ parseada retirando la zona `PDT` antes de convertir a fecha).
     ordena por el intervalo de Wilson al 95 %, para que un periodo con pocos tweets no gane por azar.
   - **Tendencia**: recta ponderada por volumen sobre el % positivo antes del corte; se informa el cambio en puntos
     a lo largo del rango (estable si es menor de 2 puntos).
-  - Periodo de mayor volumen y un recuadro de interpretación para la presentación.
+  - Periodo de mayor volumen y un recuadro de lectura que resume el periodo filtrado.
 
 La lógica está en `src/temporal.py` (`parsear_fecha`, `cargar_base`, `cambio_recoleccion`, `evaluacion`,
 `predecir`, `resumir_temporal`) y la vista en `templates/temporal.html`.
